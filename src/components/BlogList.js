@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import debounce from "lodash.debounce";
 import BlogItem from "./BlogItem";
 import { fetchPosts } from "../services/api";
@@ -13,12 +13,12 @@ const BlogList = () => {
   const [filteredPosts, setFilteredPosts] = useState([]);
   const [displayedPosts, setDisplayedPosts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [isLastPage, setIsLastPage] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const normalPerPage = 12;
-  const loadMoreRef = useRef(null);
 
   useEffect(() => {
     if (!searchQuery) {
@@ -31,17 +31,19 @@ const BlogList = () => {
   }, [searchQuery]);
 
   const loadPosts = async (currentPage, perPage) => {
-    setLoading(true);
+    if (currentPage === 1) setLoading(true);
+    else setLoadingMore(true);
+
     try {
       const newPosts = await fetchPosts(currentPage, perPage);
-      const updatedPosts = [...allPosts, ...newPosts];
-      setAllPosts(updatedPosts);
-      setDisplayedPosts(updatedPosts);
+      setAllPosts((prevPosts) => [...prevPosts, ...newPosts]);
+      setDisplayedPosts((prevDisplayed) => [...prevDisplayed, ...newPosts]);
       setIsLastPage(newPosts.length < perPage);
     } catch {
       setError("Failed to load blogs. Please try again.");
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
@@ -94,10 +96,6 @@ const BlogList = () => {
       );
     } else {
       setPage((prevPage) => prevPage + 1);
-      loadMoreRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
     }
   };
 
@@ -117,9 +115,15 @@ const BlogList = () => {
           : !loading && <p>No blogs found.</p>}
       </div>
       {!isLastPage && !loading && displayedPosts.length > 0 && (
-        <button className="load-more" onClick={loadMorePosts} ref={loadMoreRef}>
-          <span className="arrow-icon">↓</span> Load more
-        </button>
+        <>
+          {loadingMore ? (
+            <LoadingIndicator />
+          ) : (
+            <button className="load-more" onClick={loadMorePosts}>
+              <span className="arrow-icon">↓</span> Load more
+            </button>
+          )}
+        </>
       )}
     </div>
   );
