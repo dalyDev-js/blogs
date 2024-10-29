@@ -1,6 +1,5 @@
-// src/components/BlogList.js
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import debounce from "lodash.debounce";
 import BlogItem from "./BlogItem";
 import { fetchPosts } from "../services/api";
@@ -12,36 +11,32 @@ import "../styles/BlogList.css";
 const BlogList = () => {
   const [allPosts, setAllPosts] = useState([]);
   const [filteredPosts, setFilteredPosts] = useState([]);
+  const [displayedPosts, setDisplayedPosts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [page, setPage] = useState(1);
   const [isLastPage, setIsLastPage] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-
   const normalPerPage = 12;
+  const loadMoreRef = useRef(null);
 
-  // Fetch posts when `page` changes for regular pagination
   useEffect(() => {
     if (!searchQuery) {
       loadPosts(page, normalPerPage);
     }
   }, [page]);
 
-  // Fetch all matching posts when searchQuery changes
   useEffect(() => {
-    if (searchQuery) {
-      performSearch();
-    }
+    searchQuery ? performSearch() : resetPosts();
   }, [searchQuery]);
 
   const loadPosts = async (currentPage, perPage) => {
     setLoading(true);
     try {
       const newPosts = await fetchPosts(currentPage, perPage);
-      console.log("API Response:", newPosts);
-
-      setAllPosts((prevPosts) => [...prevPosts, ...newPosts]);
-      setFilteredPosts((prevPosts) => [...prevPosts, ...newPosts]);
+      const updatedPosts = [...allPosts, ...newPosts];
+      setAllPosts(updatedPosts);
+      setDisplayedPosts(updatedPosts);
       setIsLastPage(newPosts.length < perPage);
     } catch {
       setError("Failed to load blogs. Please try again.");
@@ -52,18 +47,17 @@ const BlogList = () => {
 
   const performSearch = async () => {
     setLoading(true);
-    setError(null); // Clear any previous errors on a new search
+    setError(null);
     try {
-      const newPosts = await fetchPosts(1, 1000); // Fetch all for search
-      console.log("API Search Response:", newPosts);
-
+      const newPosts = await fetchPosts(1, 1000);
       const filtered = newPosts.filter(
         (post) =>
           post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
           post.user.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
       setFilteredPosts(filtered);
-      setIsLastPage(true); // Disable pagination in search results
+      setDisplayedPosts(filtered.slice(0, normalPerPage));
+      setIsLastPage(filtered.length <= normalPerPage);
     } catch {
       setError("Failed to load blogs. Please try again.");
     } finally {
@@ -71,20 +65,39 @@ const BlogList = () => {
     }
   };
 
+  const resetPosts = () => {
+    setFilteredPosts([]);
+    setDisplayedPosts(allPosts);
+    setIsLastPage(allPosts.length < normalPerPage);
+  };
+
   const handleSearch = useCallback(
     debounce((query) => {
       setSearchQuery(query);
-      setPage(1); // Reset pagination
-      setAllPosts([]); // Clear posts during new search
-      setFilteredPosts([]);
-      setIsLastPage(false); // Reset pagination state
+      setPage(1);
+      query === "" ? resetPosts() : setDisplayedPosts([]);
+      setIsLastPage(false);
     }, 300),
     []
   );
 
-  const loadMorePosts = () => {
-    if (!isLastPage) {
+  const loadMorePosts = (event) => {
+    event.preventDefault();
+    if (searchQuery) {
+      const nextBatch = filteredPosts.slice(
+        displayedPosts.length,
+        displayedPosts.length + normalPerPage
+      );
+      setDisplayedPosts((prevDisplayed) => [...prevDisplayed, ...nextBatch]);
+      setIsLastPage(
+        displayedPosts.length + nextBatch.length >= filteredPosts.length
+      );
+    } else {
       setPage((prevPage) => prevPage + 1);
+      loadMoreRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
     }
   };
 
@@ -98,15 +111,13 @@ const BlogList = () => {
           retry={() => loadPosts(page, normalPerPage)}
         />
       )}
-
       <div className="blog-list">
-        {filteredPosts.length > 0 && !loading
-          ? filteredPosts.map((post) => <BlogItem key={post.id} post={post} />)
+        {displayedPosts.length > 0 && !loading
+          ? displayedPosts.map((post) => <BlogItem key={post.id} post={post} />)
           : !loading && <p>No blogs found.</p>}
       </div>
-
-      {!searchQuery && !isLastPage && !loading && filteredPosts.length > 0 && (
-        <button className="load-more" onClick={loadMorePosts}>
+      {!isLastPage && !loading && displayedPosts.length > 0 && (
+        <button className="load-more" onClick={loadMorePosts} ref={loadMoreRef}>
           <span className="arrow-icon">↓</span> Load more
         </button>
       )}
